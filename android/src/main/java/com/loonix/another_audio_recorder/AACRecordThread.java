@@ -13,8 +13,6 @@ import android.media.MediaRecorder;
 import android.os.Build;
 import android.util.Log;
 
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -42,7 +40,7 @@ public class AACRecordThread extends RecordThread {
 
     AACRecordThread(int sampleRate, String filePath, String extension) {
         super(sampleRate, filePath, extension);
-        // TODO: find a way to change sample rate
+
         this.sampleRate = SAMPLE_RATE;
     }
 
@@ -110,7 +108,7 @@ public class AACRecordThread extends RecordThread {
         try {
             fileOutputStream.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error closing file output stream", e);
         }
 
         return currentResult;
@@ -118,7 +116,7 @@ public class AACRecordThread extends RecordThread {
 
     @Override
     public int getDuration() {
-        long duration = dataSize / (sampleRate * 2 * 1);
+        long duration = dataSize / ((long) sampleRate * 2);
         return (int) duration;
     }
 
@@ -132,28 +130,29 @@ public class AACRecordThread extends RecordThread {
         return averagePower;
     }
 
-    @Override
-    public String getFilePath() {
-        return filePath;
-    }
+
+
 
     @Override
+
     public void run() {
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
         ByteBuffer[] codecInputBuffers = mediaCodec.getInputBuffers();
         ByteBuffer[] codecOutputBuffers = mediaCodec.getOutputBuffers();
 
-        while (status == "recording") {
+        while ("recording".equals(status)) {
             boolean success = handleCodecInput(audioRecord, mediaCodec, codecInputBuffers, Thread.currentThread().isAlive());
             if (success) {
                 try {
                     handleCodecOutput(mediaCodec, codecOutputBuffers, bufferInfo, fileOutputStream);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e(TAG, "Error handling codec output", e);
+                    break; // Exit the loop on exception to avoid continuous failure
                 }
             }
         }
     }
+
 
     private void startThread() {
         recordingThread = new Thread(this, "Audio Processing Thread");
@@ -166,69 +165,91 @@ public class AACRecordThread extends RecordThread {
         dataSize = 0;
     }
 
-    private boolean handleCodecInput(AudioRecord audioRecord,
-                                     MediaCodec mediaCodec, ByteBuffer[] codecInputBuffers,
-                                     boolean running) {
+    private synchronized boolean handleCodecInput(AudioRecord audioRecord, MediaCodec mediaCodec, ByteBuffer[] codecInputBuffers, boolean running) {
+        if ((mediaCodec == null) || !status.equals("recording") ) {
+            return false; // Early exit if codec is not in the correct state
+        }
+
         byte[] audioRecordData = new byte[bufferSize];
         int length = audioRecord.read(audioRecordData, 0, audioRecordData.length);
-        dataSize += audioRecordData.length;
-        updatePowers(audioRecordData);
-
-        if (length == AudioRecord.ERROR_BAD_VALUE ||
-                length == AudioRecord.ERROR_INVALID_OPERATION ||
-                length != bufferSize) {
-
-            if (length != bufferSize) {
-                Log.d(TAG, "length != bufferSize");
+        if (length > 0) {
+            try {
+                int codecInputBufferIndex = mediaCodec.dequeueInputBuffer(10000);
+                if (codecInputBufferIndex >= 0) {
+                    ByteBuffer codecBuffer = codecInputBuffers[codecInputBufferIndex];
+                    codecBuffer.clear();
+                    codecBuffer.put(audioRecordData);
+                    mediaCodec.queueInputBuffer(codecInputBufferIndex, 0, length, 0, running ? 0 : MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                }
+                return true;
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "IllegalStateException handling codec input", e);
+                return false;
+            } catch (Exception e) {
+                Log.e(TAG, "Exception handling codec input", e);
                 return false;
             }
         }
-
-        int codecInputBufferIndex = mediaCodec.dequeueInputBuffer(10 * 1000);
-
-        if (codecInputBufferIndex >= 0) {
-            ByteBuffer codecBuffer = codecInputBuffers[codecInputBufferIndex];
-            codecBuffer.clear();
-            codecBuffer.put(audioRecordData);
-            mediaCodec.queueInputBuffer(codecInputBufferIndex, 0, length, 0, running ? 0 : MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-        }
-
-        return true;
+        return false;
     }
 
-    private void handleCodecOutput(MediaCodec mediaCodec,
-                                   ByteBuffer[] codecOutputBuffers,
-                                   MediaCodec.BufferInfo bufferInfo,
-                                   OutputStream outputStream)
-            throws IOException {
-        int codecOutputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
 
-        while (codecOutputBufferIndex != MediaCodec.INFO_TRY_AGAIN_LATER) {
-            if (codecOutputBufferIndex >= 0) {
-                ByteBuffer encoderOutputBuffer = codecOutputBuffers[codecOutputBufferIndex];
+    private void handleCodecOutput(MediaCodec mediaCodec, ByteBuffer[] codecOutputBuffers, MediaCodec.BufferInfo bufferInfo, OutputStream outputStream) throws IOException {
+        int codecOutputBufferIndex;
+        try {
+            codecOutputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
+            while (codecOutputBufferIndex != MediaCodec.INFO_TRY_AGAIN_LATER) {
+                if (codecOutputBufferIndex >= 0) {
+                    ByteBuffer encoderOutputBuffer = codecOutputBuffers[codecOutputBufferIndex];
 
-                encoderOutputBuffer.position(bufferInfo.offset);
-                encoderOutputBuffer.limit(bufferInfo.offset + bufferInfo.size);
+                    encoderOutputBuffer.position(bufferInfo.offset);
+                    encoderOutputBuffer.limit(bufferInfo.offset + bufferInfo.size);
 
-                if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
-                    byte[] header = createAdtsHeader(bufferInfo.size - bufferInfo.offset);
+                    if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != MediaCodec.BUFFER_FLAG_CODEC_CONFIG) {
+                        byte[] header = createAdtsHeader(bufferInfo.size - bufferInfo.offset);
+                        outputStream.write(header);
+
+                        byte[] data = new byte[encoderOutputBuffer.remaining()];
+                        if (encoderOutputBuffer.remaining() >= data.length) {
 
 
-                    outputStream.write(header);
+                            encoderOutputBuffer.get(data);
+                            outputStream.write(data);
+                        } else {
+                            // Buffer does not have enough data
+                            Log.e(TAG, "Buffer underflow error!");
+                        }
 
-                    byte[] data = new byte[encoderOutputBuffer.remaining()];
-                    encoderOutputBuffer.get(data);
-                    outputStream.write(data);
+                    }
+
+                    encoderOutputBuffer.clear();
+                    mediaCodec.releaseOutputBuffer(codecOutputBufferIndex, false);
+                } else if (codecOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    codecOutputBuffers = mediaCodec.getOutputBuffers();
+                }
+                codecOutputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
+            }
+        } catch (IllegalStateException | IOException e) {
+            Log.e(TAG, "Failed handling codec output due to an exception", e);
+
+            try {
+                // Attempt to stop and release the codec
+                if (mediaCodec != null) {
+                    mediaCodec.stop();
+                    mediaCodec.release();
+                    mediaCodec = null; // recreate before using
+                }
+                // Close the output stream if it's not null
+                if (outputStream != null) {
+                    outputStream.close();
+                    outputStream = null; // Reset outputStream to ensure no further usage without proper initialization
                 }
 
-                encoderOutputBuffer.clear();
+                status = "error"; //  handle in thread management
 
-                mediaCodec.releaseOutputBuffer(codecOutputBufferIndex, false);
-            } else if (codecOutputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-                codecOutputBuffers = mediaCodec.getOutputBuffers();
+            } catch (Exception cleanupException) {
+                Log.e(TAG, "Error during cleanup after an initial exception", cleanupException);
             }
-
-            codecOutputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
         }
     }
 
@@ -283,24 +304,20 @@ public class AACRecordThread extends RecordThread {
             throw new RuntimeException("Unable to initialize AudioRecord");
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
-                android.media.audiofx.NoiseSuppressor noiseSuppressor = android.media.audiofx.NoiseSuppressor
-                        .create(audioRecord.getAudioSessionId());
-                if (noiseSuppressor != null) {
-                    noiseSuppressor.setEnabled(true);
-                }
+        if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
+            android.media.audiofx.NoiseSuppressor noiseSuppressor = android.media.audiofx.NoiseSuppressor
+                    .create(audioRecord.getAudioSessionId());
+            if (noiseSuppressor != null) {
+                noiseSuppressor.setEnabled(true);
             }
         }
 
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            if (android.media.audiofx.AutomaticGainControl.isAvailable()) {
-                android.media.audiofx.AutomaticGainControl automaticGainControl = android.media.audiofx.AutomaticGainControl
-                        .create(audioRecord.getAudioSessionId());
-                if (automaticGainControl != null) {
-                    automaticGainControl.setEnabled(true);
-                }
+        if (android.media.audiofx.AutomaticGainControl.isAvailable()) {
+            android.media.audiofx.AutomaticGainControl automaticGainControl = android.media.audiofx.AutomaticGainControl
+                    .create(audioRecord.getAudioSessionId());
+            if (automaticGainControl != null) {
+                automaticGainControl.setEnabled(true);
             }
         }
 
