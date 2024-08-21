@@ -1,3 +1,9 @@
+## 1.1.1
+Breaking changes:
+* Android SDK version updated to 34
+* Fix to #10 - https://github.com/loonix/another_audio_recorder/pull/10
+
+
 ## 1.1.0
 ## What's Changed
 * Fix related to Android 13 (API level 33) permissions by @mselmanyildirim in https://github.com/loonix/another_audio_recorder/pull/4
