@@ -4,19 +4,21 @@ version '0.5.4'
 buildscript {
     ext.kotlin_version = '1.8.22'
     ext {
-        compileSdkVersion   = 34                // or higher
-        targetSdkVersion    = 34                // or higher
-        appCompatVersion    = "1.1.0"           // or higher
-        ndkVersion          = "24.0.8215888"    // or higher
-    }
+       compileSdkVersion   = 34                // or higher
+       targetSdkVersion    = 34                // or higher
+       appCompatVersion    = "1.1.0"           // or higher
+       ndkVersion          = "24.0.8215888"    // or higher
+   }
     repositories {
         google()
         jcenter()
     }
 
+
     dependencies {
-        classpath "com.android.tools.build:gradle:7.5.1"
+        classpath "com.android.tools.build:gradle:7.1.2"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+
     }
 }
 
@@ -34,15 +36,15 @@ android {
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 34
+        targetSdkVersion 28
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     lintOptions {
         disable 'InvalidPackage'
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_18
-        targetCompatibility JavaVersion.VERSION_18
+        sourceCompatibility = '1.8'
+        targetCompatibility = '1.8'
     }
 }
 
