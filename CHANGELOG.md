@@ -1,3 +1,6 @@
+## 1.2.1
+* Added namespace
+
 ## 1.2.0
 * Added SDK 34 support for Android
 * Upgated gradle version to 8.1.1
