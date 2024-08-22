@@ -1,3 +1,6 @@
+## 1.2.0
+* Added SDK 34 support for Android
+* Upgated gradle version to 8.1.1
 
 ## 1.1.2
 * Reverted some changes from 1.1.1
@@ -5,6 +8,7 @@
 ## 1.1.1 - Android Build Busted - DO NOT USE
 Breaking changes:
 * Android SDK version updated to 34
+Commits:
 * Fix to #10 - https://github.com/loonix/another_audio_recorder/pull/10
 
 
