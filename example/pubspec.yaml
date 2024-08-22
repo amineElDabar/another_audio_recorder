@@ -1,6 +1,7 @@
 name: another_audio_recorder_example
 description: Demonstrates how to use the another_audio_recorder plugin.
 publish_to: 'none'
+homepage: https://github.com/loonix/another_audio_recorder
 
 version: 1.0.0+0000000001
 
@@ -13,11 +14,11 @@ dependencies:
   path_provider: ^2.0.9
   file: ^7.0.0
   audioplayers: ^5.2.1
+  another_audio_recorder:
+    path: ../
 
 
 dev_dependencies:
-  another_audio_recorder:
-    path: ../
   flutter_test:
     sdk: flutter
 # For information on the generic Dart part of this file, see the
